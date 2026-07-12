@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@keyframes drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(28px, -24px, 0) scale(1.08); }
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(9px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(14px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.login-orb {
+  position: fixed;
+  border-radius: 9999px;
+  filter: blur(2px);
+  pointer-events: none;
+  animation: drift 12s ease-in-out infinite;
+}
+
+.login-orb-one { top: 4%; left: 4%; width: 15rem; height: 15rem; background: rgba(144, 218, 163, .28); }
+.login-orb-two { right: 2%; bottom: 3%; width: 20rem; height: 20rem; background: rgba(243, 211, 130, .26); animation-delay: -5s; }
+.page-enter { animation: page-in .42s ease-out both; }
+.modal-enter { animation: modal-in .24s ease-out both; }
+.toast-enter { animation: toast-in .25s ease-out both; }
+.brand-mark { box-shadow: 0 8px 20px rgba(18, 79, 70, .16); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
