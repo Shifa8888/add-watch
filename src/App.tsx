@@ -917,140 +917,139 @@ function PaymentOptionsModal({
 
   return (
     <Overlay>
-      <div className="modal-enter w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-        <div className="flex items-start justify-between">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600">
-            <Icon name={type === "deposit" ? "plus" : "arrow-up"} size={21} />
-          </span>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100">
-            <Icon name="x" size={19} />
-          </button>
-        </div>
-        
-        <h2 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">
-          {type === "deposit" ? "Complete Deposit" : "Complete Withdrawal"}
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          {type === "deposit" 
-            ? `Deposit amount: ${money(amount)}. Send payment to one of the numbers below and upload screenshot.`
-            : `Withdrawal amount: ${money(amount)}. Choose your payment method and upload screenshot.`
-          }
-        </p>
+<div className="modal-enter w-full max-w-md rounded-2xl bg-white p-5 sm:p-6 shadow-2xl">
+  <div className="flex items-start justify-between">
+    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600">
+      <Icon name={type === "deposit" ? "plus" : "arrow-up"} size={21} />
+    </span>
+    <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100">
+      <Icon name="x" size={19} />
+    </button>
+  </div>
+  
+  <h2 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">
+    {type === "deposit" ? "Complete Deposit" : "Complete Withdrawal"}
+  </h2>
+  <p className="mt-2 text-sm leading-6 text-slate-500">
+    {type === "deposit" 
+      ? `Deposit amount: ${money(amount)}. Send payment to one of the numbers below and upload screenshot.`
+      : `Withdrawal amount: ${money(amount)}. Choose your payment method and upload screenshot.`
+    }
+  </p>
 
-        <div className="mt-6">
-          <h3 className="text-lg font-semibold tracking-[-0.03em]">Payment Methods</h3>
-          <div className="mt-3 space-y-3">
-            {paymentMethods.map((method) => (
-              <div 
-                key={method.id}
-                className={`rounded-xl border p-4 transition cursor-pointer ${selectedMethod === method.id ? "border-blue-600 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}
-                onClick={() => onMethodChange(method.id)}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-slate-800">{method.name}</p>
-                    <p className="mt-1 text-sm text-slate-600">{method.number}</p>
-                  </div>
-                  {selectedMethod === method.id && (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
-                      <Icon name="check" size={12} stroke={3} />
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <h3 className="text-lg font-semibold tracking-[-0.03em]">Upload Screenshot</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            Upload screenshot of your {type === "deposit" ? "payment confirmation" : "withdrawal request"} for verification.
-          </p>
-          
-          <div className="mt-3">
-            {screenshotFile ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-                      <Icon name="check" size={18} />
-                    </span>
-                    <div>
-                      <p className="font-semibold text-slate-800">{screenshotFile.name}</p>
-                      <p className="text-sm text-slate-500">
-                        {(screenshotFile.size / 1024 / 1024).toFixed(2)} MB • {screenshotFile.type.split('/')[1].toUpperCase()}
-                      </p>
-                    </div>
-                  </div>
-                  <button 
-                    type="button" 
-                    onClick={() => onScreenshotUpload({ target: { files: [] } } as any)}
-                    className="rounded-lg p-2 text-slate-400 hover:text-rose-600"
-                  >
-                    <Icon name="x" size={17} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <label className="block cursor-pointer">
-                <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center transition hover:border-blue-400 hover:bg-blue-50">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                    <Icon name="plus" size={22} />
-                  </span>
-                  <p className="mt-3 font-semibold text-slate-700">Upload Screenshot</p>
-                  <p className="mt-1 text-sm text-slate-500">JPG, PNG or PDF up to 5MB</p>
-                </div>
-                <input 
-                  type="file" 
-                  accept="image/*,.pdf" 
-                  onChange={onScreenshotUpload} 
-                  className="hidden" 
-                />
-              </label>
+  <div className="mt-6">
+    <h3 className="text-lg font-semibold tracking-[-0.03em]">Payment Methods</h3>
+    <div className="mt-3 space-y-3">
+      {paymentMethods.map((method) => (
+        <div 
+          key={method.id}
+          className={`rounded-xl border p-4 transition cursor-pointer ${selectedMethod === method.id ? "border-blue-600 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}
+          onClick={() => onMethodChange(method.id)}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-slate-800">{method.name}</p>
+              <p className="mt-1 text-sm text-slate-600">{method.number}</p>
+            </div>
+            {selectedMethod === method.id && (
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
+                <Icon name="check" size={12} stroke={3} />
+              </span>
             )}
           </div>
         </div>
+      ))}
+    </div>
+  </div>
 
-        <div className="mt-8 grid grid-cols-2 gap-3">
-          <button 
-            type="button" 
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-          <button 
-            type="button" 
-            onClick={onSubmit}
-            disabled={!screenshotFile || uploading}
-            className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {uploading ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                Uploading...
-              </>
-            ) : (
-              <>
-                {type === "deposit" ? "Submit Deposit" : "Submit Withdrawal"}
-                <Icon name="arrow-right" size={17} />
-              </>
-            )}
-          </button>
+  <div className="mt-6">
+    <h3 className="text-lg font-semibold tracking-[-0.03em]">Upload Screenshot</h3>
+    <p className="mt-1 text-sm text-slate-500">
+      Upload screenshot of your {type === "deposit" ? "payment confirmation" : "withdrawal request"} for verification.
+    </p>
+    
+    <div className="mt-3">
+      {screenshotFile ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                <Icon name="check" size={18} />
+              </span>
+              <div>
+                <p className="font-semibold text-slate-800">{screenshotFile.name}</p>
+                <p className="text-sm text-slate-500">
+                  {(screenshotFile.size / 1024 / 1024).toFixed(2)} MB • {screenshotFile.type.split('/')[1].toUpperCase()}
+                </p>
+              </div>
+            </div>
+            <button 
+              type="button" 
+              onClick={() => onScreenshotUpload({ target: { files: [] } } as any)}
+              className="rounded-lg p-2 text-slate-400 hover:text-rose-600"
+            >
+              <Icon name="x" size={17} />
+            </button>
+          </div>
         </div>
-
-        <div className="mt-6 rounded-xl bg-amber-50 p-4">
-          <div className="flex items-start gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-              <Icon name="info" size={14} />
+      ) : (
+        <label className="block cursor-pointer">
+          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center transition hover:border-blue-400 hover:bg-blue-50">
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+              <Icon name="plus" size={22} />
             </span>
-            <p className="text-sm text-amber-800">
-              <strong>Important:</strong> After uploading screenshot, admin will review and {type === "deposit" ? "add funds to your balance" : "process your withdrawal"}. Contact {supportNumber} for assistance.
-            </p>
+            <p className="mt-3 font-semibold text-slate-700">Upload Screenshot</p>
+            <p className="mt-1 text-sm text-slate-500">JPG, PNG or PDF up to 5MB</p>
           </div>
-        </div>
-      </div>
-    </Overlay>
+          <input 
+            type="file" 
+            accept="image/*,.pdf" 
+            onChange={onScreenshotUpload} 
+            className="hidden" 
+          />
+        </label>
+      )}
+    </div>
+  </div>
+
+  <div className="mt-8 grid grid-cols-2 gap-3">
+    <button 
+      type="button" 
+      onClick={onClose}
+      className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+    >
+      Cancel
+    </button>
+    <button 
+      type="button" 
+      onClick={onSubmit}
+      disabled={!screenshotFile || uploading}
+      className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
+    >
+      {uploading ? (
+        <>
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+          Uploading...
+        </>
+      ) : (
+        <>
+          {type === "deposit" ? "Submit Deposit" : "Submit Withdrawal"}
+          <Icon name="arrow-right" size={17} />
+        </>
+      )}
+    </button>
+  </div>
+
+  <div className="mt-6 rounded-xl bg-amber-50 p-4">
+    <div className="flex items-start gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+        <Icon name="info" size={14} />
+      </span>
+      <p className="text-sm text-amber-800">
+        <strong>Important:</strong> After uploading screenshot, admin will review and {type === "deposit" ? "add funds to your balance" : "process your withdrawal"}. Contact {supportNumber} for assistance.
+      </p>
+    </div>
+  </div>
+</div>    </Overlay>
   );
 }
