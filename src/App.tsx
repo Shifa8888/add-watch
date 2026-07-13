@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type Page = "dashboard" | "ads" | "wallet" | "referrals" | "plans";
+type Page = "dashboard" | "ads" | "wallet" | "referrals" | "plans" | "admin";
 type IconName =
   | "dashboard"
   | "play"
@@ -49,7 +49,8 @@ type Account = {
   planId: PlanId;
   deposits: number;
   referrals: Referral[];
-  activity: { id: number; title: string; time: string; amount: number; type: "earn" | "deposit" | "withdraw" }[];
+  activity: { id: number; title: string; time: string; amount: number; type: "earn" | "deposit" | "withdraw" | "pending_deposit" | "pending_withdraw" }[];
+  pendingTransactions: { id: number; type: "deposit" | "withdraw"; amount: number; method: string; status: "pending" | "approved" | "rejected"; screenshot?: string; timestamp: number }[];
 };
 
 type Ad = {
@@ -145,6 +146,7 @@ const initialAccount = (): Account => {
       { id: 2, title: "Referral bonus - Ali Ahmed", time: "Yesterday", amount: 100, type: "earn" },
       { id: 3, title: "Earned from Pakistan Telecom", time: "Yesterday", amount: 5, type: "earn" },
     ],
+    pendingTransactions: [],
   };
 };
 
@@ -212,6 +214,11 @@ export default function App() {
   const [gamUnitPath, setGamUnitPath] = useState(() => localStorage.getItem("gemstar-gam-rewarded-unit") ?? "");
   const [liveAdState, setLiveAdState] = useState<LiveAdState>("idle");
   const [liveAdAction, setLiveAdAction] = useState<(() => void) | null>(null);
+  const [showPaymentOptions, setShowPaymentOptions] = useState<"deposit" | "withdraw" | null>(null);
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("JazzCash");
+  const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const currentPlan = plans[account.planId];
   const remainingAds = Math.max(account.dailyLimit - account.adsWatched, 0);
@@ -258,6 +265,14 @@ export default function App() {
     localStorage.setItem("gemstar-username", loginUsername.trim());
     localStorage.setItem("gemstar-email", loginEmail.trim());
     setIsLoggedIn(true);
+    
+    // Check if user is admin
+    if (loginUsername.trim() === "admin" || loginEmail.trim() === "admin@gemstar.com") {
+      setIsAdmin(true);
+    } else {
+      setIsAdmin(false);
+    }
+    
     setLoginError("");
   }
 
@@ -337,15 +352,9 @@ export default function App() {
       return;
     }
     
-    // In real app, this would send screenshot to customer service
-    setAccount((current) => ({
-      ...current,
-      balance: current.balance + amount,
-      deposits: current.deposits + amount,
-      activity: [{ id: Date.now(), title: "Wallet deposit", time: "Just now", amount, type: "deposit" as const }, ...current.activity].slice(0, 8),
-    }));
+    // Show payment options instead of directly depositing
     setWalletModal(null);
-    setToast(`Deposit request for ${money(amount)} sent to customer service. Send screenshot to ${supportNumber}.`);
+    setShowPaymentOptions("deposit");
   }
 
   function submitWithdrawal(event: FormEvent) {
@@ -368,15 +377,9 @@ export default function App() {
       return;
     }
     
-    // In real app, this would send screenshot to customer service
-    setAccount((current) => ({
-      ...current,
-      balance: current.balance - amount,
-      activity: [{ id: Date.now(), title: `Withdrawal request to ${withdrawMethod}`, time: "Just now", amount: -amount, type: "withdraw" as const }, ...current.activity].slice(0, 8),
-    }));
-    setWithdrawAmount("");
+    // Show payment options instead of directly withdrawing
     setWalletModal(null);
-    setToast(`Withdrawal request for ${money(amount)} sent to customer service via ${withdrawMethod}. Send screenshot to ${supportNumber}.`);
+    setShowPaymentOptions("withdraw");
   }
 
   function saveGamUnitPath() {
@@ -388,6 +391,125 @@ export default function App() {
     localStorage.setItem("gemstar-gam-rewarded-unit", unitPath);
     setGamUnitPath(unitPath);
     setToast("Live rewarded ad unit saved in this browser.");
+  }
+
+  function handleScreenshotUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Check file type
+    if (!file.type.startsWith("image/")) {
+      setToast("Please upload an image file (JPG, PNG, etc.)");
+      return;
+    }
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setToast("File size too large. Maximum 5MB.");
+      return;
+    }
+
+    setScreenshotFile(file);
+  }
+
+  function submitTransactionWithScreenshot() {
+    if (!screenshotFile) {
+      setToast("Please upload a screenshot of your payment.");
+      return;
+    }
+
+    const transactionType = showPaymentOptions;
+    const amount = transactionType === "deposit" ? Number(depositAmount) : Number(withdrawAmount);
+    const method = selectedPaymentMethod;
+
+    setUploadingScreenshot(true);
+
+    // Simulate upload delay
+    setTimeout(() => {
+      const transactionId = Date.now();
+      
+      // Create transaction object
+      const transaction = {
+        id: transactionId,
+        type: transactionType as "deposit" | "withdraw",
+        amount,
+        method,
+        status: "pending" as const,
+        timestamp: transactionId,
+      };
+
+      // Update account with pending transaction
+      setAccount((current) => ({
+        ...current,
+        pendingTransactions: [...current.pendingTransactions, transaction],
+        activity: [{
+          id: transactionId,
+          title: `${transactionType === "deposit" ? "Deposit" : "Withdrawal"} request to ${method}`,
+          time: "Just now",
+          amount: transactionType === "deposit" ? amount : -amount,
+          type: transactionType === "deposit" ? "pending_deposit" : "pending_withdraw"
+        }, ...current.activity].slice(0, 8),
+      }));
+
+      // Reset states
+      setScreenshotFile(null);
+      setShowPaymentOptions(null);
+      setUploadingScreenshot(false);
+      
+      setToast(`${transactionType === "deposit" ? "Deposit" : "Withdrawal"} request submitted. Screenshot uploaded. Transaction ID: ${transactionId}. Admin will review.`);
+      
+      // Reset deposit/withdraw amounts
+      if (transactionType === "deposit") {
+        setDepositAmount("200");
+      } else {
+        setWithdrawAmount("");
+      }
+    }, 1500);
+  }
+
+  function approveTransaction(transactionId: number) {
+    setAccount((current) => {
+      const transaction = current.pendingTransactions.find(t => t.id === transactionId);
+      if (!transaction) return current;
+
+      const updatedTransactions = current.pendingTransactions.filter(t => t.id !== transactionId);
+      
+      if (transaction.type === "deposit" && transaction.status === "pending") {
+        return {
+          ...current,
+          balance: current.balance + transaction.amount,
+          deposits: current.deposits + transaction.amount,
+          pendingTransactions: updatedTransactions,
+          activity: [
+            { 
+              id: transactionId, 
+              title: `Deposit approved via ${transaction.method}`, 
+              time: "Just now", 
+              amount: transaction.amount, 
+              type: "deposit" as const 
+            },
+            ...current.activity.filter(a => a.id !== transactionId)
+          ].slice(0, 8),
+        };
+      } else if (transaction.type === "withdraw" && transaction.status === "pending") {
+        return {
+          ...current,
+          balance: current.balance - transaction.amount,
+          pendingTransactions: updatedTransactions,
+          activity: [
+            { 
+              id: transactionId, 
+              title: `Withdrawal approved to ${transaction.method}`, 
+              time: "Just now", 
+              amount: -transaction.amount, 
+              type: "withdraw" as const 
+            },
+            ...current.activity.filter(a => a.id !== transactionId)
+          ].slice(0, 8),
+        };
+      }
+      return current;
+    });
   }
 
   function requestLiveRewardedAd() {
@@ -490,15 +612,26 @@ export default function App() {
     { id: "wallet", label: "Wallet", icon: "wallet" },
     { id: "referrals", label: "Referrals", icon: "users" },
     { id: "plans", label: "Plans", icon: "crown" },
+    ...(isAdmin ? [{ id: "admin" as Page, label: "Admin", icon: "shield" as IconName }] : []),
   ];
 
   return <div className="min-h-screen bg-[#f7f8f7] text-slate-900">
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] flex-col border-r border-slate-200/80 bg-white px-4 py-6 lg:flex"><div className="flex items-center gap-3 px-3"><BrandMark /><span className="text-xl font-semibold tracking-[-0.04em]">GEM STAR</span></div><nav className="mt-12 space-y-1" aria-label="Primary navigation">{navItems.map((item) => <NavItem key={item.id} item={item} active={activePage === item.id} onClick={() => showPage(item.id)} />)}</nav><div className="mt-auto"><button onClick={() => showPage("plans")} className="w-full rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 p-4 text-left transition hover:from-blue-100 hover:to-indigo-100"><span className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white"><Icon name="crown" size={16} /></span><p className="text-sm font-semibold text-blue-600">Upgrade your plan</p><p className="mt-1 text-xs leading-5 text-blue-900/60">Premium members can withdraw from Rs. 50.</p></button><div className="mt-4 border-t border-slate-100 pt-4"><div className="flex items-center gap-3 px-3 py-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 text-xs font-bold text-blue-600">GS</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{account.username}</p><p className="truncate text-xs text-slate-400">{account.planId === "free" ? "Free Plan" : account.planId === "standard" ? "Standard Plan" : account.planId === "premium" ? "Premium Plan" : "Premium Pro Plan"}</p></div></div><button onClick={logout} className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-rose-600"><Icon name="log-out" size={18} /> Log out</button></div></div></aside>
     <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur lg:ml-[252px] lg:px-10"><button onClick={() => setMobileMenu(true)} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden" aria-label="Open menu"><Icon name="menu" /></button><div className="hidden lg:block"><p className="text-sm font-medium text-slate-500">Welcome back, {account.username}</p></div><div className="flex items-center gap-2 sm:gap-4"><button onClick={() => setToast("You are all caught up.")} className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100" aria-label="Notifications"><Icon name="bell" size={19} /><span className="absolute right-2.5 top-2 h-1.5 w-1.5 rounded-full bg-rose-500" /></button><button onClick={() => showPage("wallet")} className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-2 pl-2 pr-3 text-sm font-semibold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700"><span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-white/15"><Icon name="wallet" size={14} /></span><span className="hidden sm:inline">{money(account.balance)}</span></button></div></header>
     {mobileMenu && <><button onClick={() => setMobileMenu(false)} className="fixed inset-0 z-40 bg-slate-950/35 lg:hidden" aria-label="Close menu" /><aside className="fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col bg-white px-4 py-6 shadow-2xl lg:hidden"><div className="flex items-center justify-between px-3"><div className="flex items-center gap-3"><BrandMark /><span className="text-xl font-semibold tracking-[-0.04em]">GEM STAR</span></div><button onClick={() => setMobileMenu(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Icon name="x" /></button></div><nav className="mt-10 space-y-1">{navItems.map((item) => <NavItem key={item.id} item={item} active={activePage === item.id} onClick={() => showPage(item.id)} />)}</nav><button onClick={logout} className="mt-auto flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-rose-600"><Icon name="log-out" size={18} /> Log out</button></aside></>}
-    <main className="mx-auto max-w-[1460px] px-4 py-7 pb-24 sm:px-7 lg:ml-[252px] lg:px-10 lg:py-10">{activePage === "dashboard" && <Dashboard account={account} currentPlan={currentPlan} remainingAds={remainingAds} qualifiedReferrals={qualifiedReferrals} onNavigate={showPage} />}{activePage === "ads" && <AdsPage ads={ads} remainingAds={remainingAds} limit={account.dailyLimit} onWatch={(ad) => remainingAds > 0 ? setWatchingAd(ad) : setToast("Your daily ad limit has been reached. Upgrade your plan for more ads.")} onPlans={() => showPage("plans")} gamUnitPath={gamUnitPath} liveAdState={liveAdState} liveAdAction={liveAdAction} onGamUnitChange={setGamUnitPath} onSaveGamUnit={saveGamUnitPath} onRequestLiveAd={requestLiveRewardedAd} />}{activePage === "wallet" && <WalletPage account={account} plan={currentPlan} onDeposit={() => setWalletModal("deposit")} onWithdraw={() => setWalletModal("withdraw")} />}{activePage === "referrals" && <ReferralsPage referrals={account.referrals} qualifiedReferrals={qualifiedReferrals} earnings={referralEarnings} inviteName={inviteName} inviteEmail={inviteEmail} onNameChange={setInviteName} onEmailChange={setInviteEmail} onInvite={inviteReferral} onCopy={copyReferralLink} onQualify={qualifyReferral} />}{activePage === "plans" && <PlansPage activePlan={account.planId} onChoose={setSelectedPlan} />}</main>
+    <main className="mx-auto max-w-[1460px] px-4 py-7 pb-24 sm:px-7 lg:ml-[252px] lg:px-10 lg:py-10">{activePage === "dashboard" && <Dashboard account={account} currentPlan={currentPlan} remainingAds={remainingAds} qualifiedReferrals={qualifiedReferrals} onNavigate={showPage} />}{activePage === "ads" && <AdsPage ads={ads} remainingAds={remainingAds} limit={account.dailyLimit} onWatch={(ad) => remainingAds > 0 ? setWatchingAd(ad) : setToast("Your daily ad limit has been reached. Upgrade your plan for more ads.")} onPlans={() => showPage("plans")} gamUnitPath={gamUnitPath} liveAdState={liveAdState} liveAdAction={liveAdAction} onGamUnitChange={setGamUnitPath} onSaveGamUnit={saveGamUnitPath} onRequestLiveAd={requestLiveRewardedAd} />}{activePage === "wallet" && <WalletPage account={account} plan={currentPlan} onDeposit={() => setWalletModal("deposit")} onWithdraw={() => setWalletModal("withdraw")} />}{activePage === "referrals" && <ReferralsPage referrals={account.referrals} qualifiedReferrals={qualifiedReferrals} earnings={referralEarnings} inviteName={inviteName} inviteEmail={inviteEmail} onNameChange={setInviteName} onEmailChange={setInviteEmail} onInvite={inviteReferral} onCopy={copyReferralLink} onQualify={qualifyReferral} />}{activePage === "plans" && <PlansPage activePlan={account.planId} onChoose={setSelectedPlan} />}{activePage === "admin" && isAdmin && <AdminPanel account={account} onApproveTransaction={approveTransaction} />}</main>
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white px-2 py-2 shadow-[0_-8px_25px_rgba(15,23,42,0.05)] lg:hidden">{navItems.map((item) => <button key={item.id} onClick={() => showPage(item.id)} className={`flex flex-1 flex-col items-center gap-1 rounded-lg py-1.5 text-[10px] font-semibold transition ${activePage === item.id ? "text-[#16816e]" : "text-slate-400"}`}><Icon name={item.icon} size={18} /><span>{item.label}</span></button>)}</nav>
-    {watchingAd && <WatchModal ad={watchingAd} onComplete={() => completeAd(watchingAd)} onClose={() => setWatchingAd(null)} />}{selectedPlan && <PlanModal plan={plans[selectedPlan]} onClose={() => setSelectedPlan(null)} onConfirm={activatePlan} />}{walletModal === "deposit" && <DepositModal amount={depositAmount} onAmountChange={setDepositAmount} onClose={() => setWalletModal(null)} onSubmit={submitDeposit} />}{walletModal === "withdraw" && <WithdrawModal plan={currentPlan} amount={withdrawAmount} method={withdrawMethod} onAmountChange={setWithdrawAmount} onMethodChange={setWithdrawMethod} onClose={() => setWalletModal(null)} onSubmit={submitWithdrawal} />}{showDepositPopup && <Overlay><div className="modal-enter w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-600"><Icon name="info" size={21} /></span><button type="button" onClick={() => setShowDepositPopup(false)} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100"><Icon name="x" size={19} /></button></div><h2 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">Deposit Required for Free Plan</h2><p className="mt-2 text-sm leading-6 text-slate-500">Free plan users must deposit at least Rs. 300 to request withdrawals.</p><div className="mt-6 rounded-xl bg-rose-50 p-4"><div className="text-sm text-rose-800"><strong>Withdrawal Rule:</strong> Free plan users cannot withdraw until they deposit Rs. 300 or more.</div></div><div className="mt-6 grid grid-cols-2 gap-3"><button onClick={() => setShowDepositPopup(false)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">Cancel</button><button onClick={() => { setShowDepositPopup(false); setWalletModal("deposit"); }} className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700">Make Deposit</button></div></div></Overlay>}{toast && <div className="toast-enter fixed bottom-24 left-1/2 z-[70] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-2xl lg:bottom-8"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500"><Icon name="check" size={14} stroke={2.5} /></span>{toast}<button onClick={() => setToast("")} className="ml-auto text-slate-400 hover:text-white"><Icon name="x" size={17} /></button></div>}
+    {watchingAd && <WatchModal ad={watchingAd} onComplete={() => completeAd(watchingAd)} onClose={() => setWatchingAd(null)} />}{selectedPlan && <PlanModal plan={plans[selectedPlan]} onClose={() => setSelectedPlan(null)} onConfirm={activatePlan} />}{walletModal === "deposit" && <DepositModal amount={depositAmount} onAmountChange={setDepositAmount} onClose={() => setWalletModal(null)} onSubmit={submitDeposit} />}{walletModal === "withdraw" && <WithdrawModal plan={currentPlan} amount={withdrawAmount} method={withdrawMethod} onAmountChange={setWithdrawAmount} onMethodChange={setWithdrawMethod} onClose={() => setWalletModal(null)} onSubmit={submitWithdrawal} />}{showDepositPopup && <Overlay><div className="modal-enter w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-600"><Icon name="info" size={21} /></span><button type="button" onClick={() => setShowDepositPopup(false)} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100"><Icon name="x" size={19} /></button></div><h2 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">Deposit Required for Free Plan</h2><p className="mt-2 text-sm leading-6 text-slate-500">Free plan users must deposit at least Rs. 300 to request withdrawals.</p><div className="mt-6 rounded-xl bg-rose-50 p-4"><div className="text-sm text-rose-800"><strong>Withdrawal Rule:</strong> Free plan users cannot withdraw until they deposit Rs. 300 or more.</div></div><div className="mt-6 grid grid-cols-2 gap-3"><button onClick={() => setShowDepositPopup(false)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">Cancel</button><button onClick={() => { setShowDepositPopup(false); setWalletModal("deposit"); }} className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700">Make Deposit</button></div></div></Overlay>}{showPaymentOptions && <PaymentOptionsModal 
+      type={showPaymentOptions} 
+      amount={showPaymentOptions === "deposit" ? Number(depositAmount) : Number(withdrawAmount)}
+      selectedMethod={selectedPaymentMethod}
+      screenshotFile={screenshotFile}
+      uploading={uploadingScreenshot}
+      onMethodChange={setSelectedPaymentMethod}
+      onScreenshotUpload={handleScreenshotUpload}
+      onSubmit={submitTransactionWithScreenshot}
+      onClose={() => { setShowPaymentOptions(null); setScreenshotFile(null); }}
+    />}{toast && <div className="toast-enter fixed bottom-24 left-1/2 z-[70] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-2xl lg:bottom-8"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500"><Icon name="check" size={14} stroke={2.5} /></span>{toast}<button onClick={() => setToast("")} className="ml-auto text-slate-400 hover:text-white"><Icon name="x" size={17} /></button></div>}
   </div>;
 }
 
@@ -516,24 +649,186 @@ function ActivityRow({ item }: { item: Account["activity"][number] }) { return <
 
 function AdsPage({ ads, remainingAds, limit, onWatch, onPlans, gamUnitPath, liveAdState, liveAdAction, onGamUnitChange, onSaveGamUnit, onRequestLiveAd }: { ads: Ad[]; remainingAds: number; limit: number; onWatch: (ad: Ad) => void; onPlans: () => void; gamUnitPath: string; liveAdState: LiveAdState; liveAdAction: (() => void) | null; onGamUnitChange: (value: string) => void; onSaveGamUnit: () => void; onRequestLiveAd: () => void }) { const liveButtonText = liveAdState === "requesting" ? "Loading live ad..." : liveAdState === "ready" ? "Start real ad" : liveAdState === "showing" ? "Ad playing" : "Load real ad"; return <div className="page-enter"><PageHeader eyebrow="Watch & earn" title="Today&apos;s ad opportunities" description="Use your approved Google Ad Manager rewarded unit for real ad delivery, or preview the front-end campaigns below." action={<div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm"><span className="font-bold text-[#126b5a]">{remainingAds} of {limit}</span><span className="ml-1 text-emerald-800/65">views left today</span></div>} /><section className="mb-7 overflow-hidden rounded-2xl border border-[#cfe8dc] bg-[#f5fbf7] p-5 sm:p-6"><div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"><div className="max-w-xl"><div className="flex items-center gap-3"><span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#124f46] text-white"><Icon name="play" size={19} /></span><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#16816e]">Live inventory</p><h2 className="mt-0.5 text-lg font-semibold tracking-[-0.03em]">Google Ad Manager rewarded ad</h2></div></div><p className="mt-4 text-sm leading-6 text-slate-600">Add your approved rewarded ad-unit path, then load a real ad. Rs. 5 is credited only after Google&apos;s <strong className="font-semibold">rewardedSlotGranted</strong> event.</p><p className="mt-3 text-sm text-slate-500">For wallet or withdrawal help, contact <strong className="font-semibold text-slate-700">{supportNumber}</strong>.</p></div><div className="flex min-w-[240px] flex-col gap-2 sm:flex-row"><button onClick={liveAdState === "ready" ? liveAdAction ?? onRequestLiveAd : onRequestLiveAd} disabled={liveAdState === "requesting" || liveAdState === "showing" || remainingAds === 0} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#124f46] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#0b3d36] disabled:cursor-not-allowed disabled:bg-slate-300"><Icon name="play" size={16} /> {liveButtonText}</button>{liveAdState === "ready" && <span className="inline-flex items-center justify-center rounded-xl bg-emerald-100 px-3 py-2 text-xs font-bold text-[#126b5a]">Ready to play</span>}</div></div><div className="mt-5 grid gap-2 border-t border-[#d9eee3] pt-5 md:grid-cols-[minmax(0,1fr)_auto]"><label className="sr-only" htmlFor="gam-unit-path">Google Ad Manager rewarded unit path</label><input id="gam-unit-path" value={gamUnitPath} onChange={(event) => onGamUnitChange(event.target.value)} placeholder="/1234567/rewarded_ad_unit" className="w-full rounded-xl border border-[#c9e4d7] bg-white px-3.5 py-3 font-mono text-sm outline-none transition placeholder:font-sans focus:border-[#16816e] focus:ring-4 focus:ring-emerald-100" /><button onClick={onSaveGamUnit} className="rounded-xl border border-[#16816e] px-4 py-3 text-sm font-bold text-[#126b5a] transition hover:bg-emerald-100">Save live unit</button></div><p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-500"><span className="mt-0.5 text-[#16816e]"><Icon name="shield" size={14} /></span>Requires an approved Google Ad Manager rewarded ad unit and consent setup. Rewarded web ads are supported on mobile-optimized pages and may be blocked by ad blockers.</p></section><div className="mb-7 rounded-2xl border border-slate-200/80 bg-white p-5 sm:flex sm:items-center sm:justify-between"><div className="flex items-center gap-4"><div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e8f4ee] text-[#126b5a]"><Icon name="play" size={23} /><span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-[#92dc9d]" /></div><div><h2 className="font-semibold tracking-[-0.02em]">Your daily allowance</h2><p className="mt-1 text-sm text-slate-500">Watch up to {limit} verified ads. No points are added for skipped videos.</p></div></div><div className="mt-4 w-full sm:mt-0 sm:w-48"><div className="mb-2 flex justify-between text-xs font-semibold text-slate-500"><span>Progress</span><span>{limit - remainingAds}/{limit}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#16816e] transition-all duration-700" style={{ width: `${((limit - remainingAds) / limit) * 100}%` }} /></div></div></div><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold tracking-[-0.03em]">Demo sponsored campaigns</h2><span className="text-xs text-slate-400">Front-end preview</span></div><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{ads.map((ad) => <article key={ad.id} className="group overflow-hidden rounded-2xl border border-slate-200/80 bg-white transition hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-200/50"><div className={`relative h-36 overflow-hidden bg-gradient-to-br ${ad.colors} p-5 text-white`}><div className="absolute -right-6 -top-8 h-32 w-32 rounded-full border-[18px] border-white/10" /><div className="absolute -bottom-12 left-8 h-28 w-28 rounded-full bg-white/10" /><div className="relative flex h-full flex-col justify-between"><span className="w-fit rounded-md bg-black/15 px-2 py-1 text-[10px] font-bold tracking-[0.14em]">DEMO</span><p className="text-lg font-bold tracking-[-0.04em]">{ad.brand}</p></div></div><div className="p-5"><div className="flex items-center justify-between gap-3"><span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">{ad.category}</span><span className="inline-flex items-center gap-1 text-xs font-medium text-slate-400"><Icon name="clock" size={14} /> {ad.duration}</span></div><h2 className="mt-3 min-h-12 text-base font-semibold leading-6 tracking-[-0.02em] text-slate-800">{ad.title}</h2><div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4"><div><p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">Preview reward</p><p className="mt-0.5 text-base font-bold text-[#16816e]">+{money(ad.reward)}</p></div><button onClick={() => onWatch(ad)} disabled={remainingAds === 0} className="inline-flex items-center gap-1.5 rounded-xl bg-[#124f46] px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b3d36] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">Preview flow <Icon name="play" size={15} /></button></div></div></article>)}</div>{remainingAds === 0 && <div className="mt-8 flex flex-col items-start gap-4 rounded-2xl bg-slate-900 p-6 text-white sm:flex-row sm:items-center sm:justify-between"><div><p className="text-lg font-semibold">You reached today&apos;s viewing limit.</p><p className="mt-1 text-sm text-slate-400">Upgrade for more verified ads and a lower withdrawal minimum.</p></div><button onClick={onPlans} className="rounded-xl bg-[#97e2a2] px-4 py-3 text-sm font-bold text-[#0d463d] transition hover:bg-[#b1edba]">Compare plans</button></div>}<p className="mt-8 flex items-center gap-2 text-xs leading-5 text-slate-400"><Icon name="info" size={15} /> Demo campaigns remain for interface testing. Real delivery is handled by your saved Google Ad Manager unit.</p></div>; }
 
-function WalletPage({ account, plan, onDeposit, onWithdraw }: { account: Account; plan: (typeof plans)[PlanId]; onDeposit: () => void; onWithdraw: () => void }) { return <div className="page-enter"><PageHeader eyebrow="Wallet" title="Your earnings and transactions" description="Track ad rewards, deposit funds, and request withdrawals via Easypaisa or JazzCash." action={<button onClick={onDeposit} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700"><Icon name="plus" size={17} /> Add funds</button>} /><section className="overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white sm:p-8"><div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-start"><div><p className="text-sm font-medium text-blue-100/75">Available balance</p><p className="mt-2 text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">{money(account.balance)}</p><p className="mt-3 text-sm text-blue-100/65">Earn Rs. {plan.perAdPrice} per ad. Minimum withdrawal: Rs. {plan.minWithdrawal}</p></div><div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"><p className="text-xs font-bold uppercase tracking-[0.13em] text-blue-100/60">Active plan</p><p className="mt-1 text-base font-semibold">{plan.name}</p><p className="mt-1 text-xs text-blue-100/60">Rs. {plan.perAdPrice} per ad</p></div></div><div className="mt-9 grid gap-3 sm:grid-cols-2"><button onClick={onWithdraw} className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-3.5 text-sm font-bold text-white transition hover:from-green-600 hover:to-emerald-600"><Icon name="arrow-up" size={17} /> Withdraw funds</button><button onClick={onDeposit} className="flex items-center justify-center gap-2 rounded-xl border border-white/20 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-white/10"><Icon name="plus" size={17} /> Deposit balance</button></div></section>
-<section className="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,.6fr)]">
-  {/* <div className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6">
-  <div className="mb-5">
-    <h2 className="text-lg font-semibold tracking-[-0.03em]">Transaction history</h2><p className="mt-1 text-sm text-slate-500">Latest earning, deposit and withdrawal activity.</p></div><div className="divide-y divide-slate-100">{account.activity.map((item) => <ActivityRow key={item.id} item={item} />)}</div>
+function WalletPage({ account, plan, onDeposit, onWithdraw }: { account: Account; plan: (typeof plans)[PlanId]; onDeposit: () => void; onWithdraw: () => void }) { 
+  const pendingTransactions = account.pendingTransactions.filter(t => t.status === "pending");
+  
+  return <div className="page-enter"><PageHeader eyebrow="Wallet" title="Your earnings and transactions" description="Track ad rewards, deposit funds, and request withdrawals via Easypaisa or JazzCash." action={<button onClick={onDeposit} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700"><Icon name="plus" size={17} /> Add funds</button>} /><section className="overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white sm:p-8"><div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-start"><div><p className="text-sm font-medium text-blue-100/75">Available balance</p><p className="mt-2 text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">{money(account.balance)}</p><p className="mt-3 text-sm text-blue-100/65">Earn Rs. {plan.perAdPrice} per ad. Minimum withdrawal: Rs. {plan.minWithdrawal}</p></div><div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"><p className="text-xs font-bold uppercase tracking-[0.13em] text-blue-100/60">Active plan</p><p className="mt-1 text-base font-semibold">{plan.name}</p><p className="mt-1 text-xs text-blue-100/60">Rs. {plan.perAdPrice} per ad</p></div></div><div className="mt-9 grid gap-3 sm:grid-cols-2"><button onClick={onWithdraw} className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-3.5 text-sm font-bold text-white transition hover:from-green-600 hover:to-emerald-600"><Icon name="arrow-up" size={17} /> Withdraw funds</button><button onClick={onDeposit} className="flex items-center justify-center gap-2 rounded-xl border border-white/20 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-white/10"><Icon name="plus" size={17} /> Deposit balance</button></div></section>
 
-</div> */}
-<div className="rounded-2xl border border-slate-200/80 bg-white p-6"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Icon name="info" size={19} />
-</span>
-<h2 className="mt-5 text-lg font-semibold tracking-[-0.03em]">Withdrawal information</h2>
-<p className="mt-2 text-sm leading-6 text-slate-500">Your current <span className="font-semibold text-slate-700">{plan.name}</span> plan allows withdrawal requests from <span className="font-semibold text-slate-700">{money(plan.minWithdrawal)}</span>.</p>
-<p className="mt-4 border-t border-slate-100 pt-4 text-sm leading-6 text-slate-500">Withdrawal methods: <strong className="text-blue-600">Easypaisa</strong> and <strong className="text-blue-600">JazzCash</strong>. Send screenshot to customer service.</p></div>
+  {pendingTransactions.length > 0 && (
+    <section className="mt-7">
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+            <Icon name="clock" size={19} />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.03em]">Pending Transactions</h2>
+            <p className="mt-1 text-sm text-amber-800">You have {pendingTransactions.length} transaction(s) waiting for admin approval.</p>
+            <div className="mt-3 space-y-2">
+              {pendingTransactions.map((transaction) => (
+                <div key={transaction.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">
+                      {transaction.type === "deposit" ? "Deposit" : "Withdrawal"} of {money(transaction.amount)}
+                    </p>
+                    <p className="text-xs text-slate-500">Via {transaction.method} • Transaction ID: {transaction.id}</p>
+                  </div>
+                  <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Pending</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )}
+
+<section className="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,.6fr)]">
+  <div className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6">
+    <div className="mb-5">
+      <h2 className="text-lg font-semibold tracking-[-0.03em]">Transaction history</h2>
+      <p className="mt-1 text-sm text-slate-500">Latest earning, deposit and withdrawal activity.</p>
+    </div>
+    <div className="divide-y divide-slate-100">
+      {account.activity.map((item) => (
+        <div key={item.id} className="flex items-center gap-3 py-4 first:pt-0 last:pb-0">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            item.type === "withdraw" || item.type === "pending_withdraw" ? "bg-rose-50 text-rose-600" : 
+            item.type === "deposit" || item.type === "pending_deposit" ? "bg-sky-50 text-sky-600" : 
+            "bg-emerald-50 text-emerald-600"
+          }`}>
+            {item.type === "withdraw" || item.type === "pending_withdraw" ? <Icon name="arrow-up" size={18} /> : 
+             item.type === "deposit" || item.type === "pending_deposit" ? <Icon name="plus" size={18} /> : 
+             <Icon name="play" size={18} />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-slate-800">{item.title}</p>
+            <p className="mt-0.5 text-xs text-slate-400">{item.time}</p>
+          </div>
+          <span className={`text-sm font-bold ${
+            item.type === "pending_deposit" || item.type === "pending_withdraw" ? "text-amber-600" :
+            item.amount < 0 ? "text-rose-600" : "text-[#16816e]"
+          }`}>
+            {item.type === "pending_deposit" || item.type === "pending_withdraw" ? "Pending" : 
+             item.amount < 0 ? "-" : "+"}{money(Math.abs(item.amount))}
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+
+<div className="rounded-2xl border border-slate-200/80 bg-white p-6">
+  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+    <Icon name="info" size={19} />
+  </span>
+  <h2 className="mt-5 text-lg font-semibold tracking-[-0.03em]">Withdrawal information</h2>
+  <p className="mt-2 text-sm leading-6 text-slate-500">Your current <span className="font-semibold text-slate-700">{plan.name}</span> plan allows withdrawal requests from <span className="font-semibold text-slate-700">{money(plan.minWithdrawal)}</span>.</p>
+  <p className="mt-4 border-t border-slate-100 pt-4 text-sm leading-6 text-slate-500">Withdrawal methods: <strong className="text-blue-600">Easypaisa</strong> and <strong className="text-blue-600">JazzCash</strong>. Send screenshot to customer service.</p>
+  <div className="mt-6 rounded-xl bg-slate-50 p-4">
+    <div className="flex items-start gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+        <Icon name="shield" size={14} />
+      </span>
+      <p className="text-sm text-slate-700">
+        <strong>Payment Process:</strong> After submitting a deposit or withdrawal request, you'll need to upload a screenshot of your payment. Admin will review and approve within 24 hours.
+      </p>
+    </div>
+  </div>
+</div>
 </section>
 </div>; }
 
 function ReferralsPage({ referrals, qualifiedReferrals, earnings, inviteName, inviteEmail, onNameChange, onEmailChange, onInvite, onCopy, onQualify }: { referrals: Referral[]; qualifiedReferrals: number; earnings: number; inviteName: string; inviteEmail: string; onNameChange: (value: string) => void; onEmailChange: (value: string) => void; onInvite: (event: FormEvent) => void; onCopy: () => void; onQualify: (id: number) => void }) { return <div className="page-enter"><PageHeader eyebrow="Referral program" title="Invite friends, grow together" description="You receive Rs. 20 when an invited member completes their first two ads." /><section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,.8fr)]"><div className="overflow-hidden rounded-2xl bg-[#124f46] p-6 text-white sm:p-8"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#b5efbd]"><Icon name="gift" size={22} /></span><h2 className="mt-7 max-w-md text-3xl font-semibold leading-tight tracking-[-0.045em]">Share the link. Earn when they get started.</h2><p className="mt-3 max-w-lg text-sm leading-6 text-emerald-100/70">Your reward unlocks automatically after a friend watches their second ad.</p><div className="mt-7 flex rounded-xl bg-white p-1.5"><code className="min-w-0 flex-1 truncate px-3 py-2 text-sm text-slate-600">gemstar.com/invite/GEMSTAR786</code><button onClick={onCopy} className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#124f46] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#0b3d36]"><Icon name="copy" size={16} /><span className="hidden sm:inline">Copy</span></button></div></div><form onSubmit={onInvite} className="rounded-2xl border border-slate-200/80 bg-white p-6"><h2 className="text-lg font-semibold tracking-[-0.03em]">Send an invite</h2><p className="mt-1 text-sm text-slate-500">Create an invite in your referral list.</p><label className="mt-5 block text-sm font-medium text-slate-700">Friend&apos;s name<input value={inviteName} onChange={(event) => onNameChange(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none transition focus:border-[#16816e] focus:ring-4 focus:ring-emerald-100" placeholder="e.g. Noor Ahmed" /></label><label className="mt-4 block text-sm font-medium text-slate-700">Email address<input value={inviteEmail} onChange={(event) => onEmailChange(event.target.value)} type="email" className="mt-2 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none transition focus:border-[#16816e] focus:ring-4 focus:ring-emerald-100" placeholder="friend@example.com" /></label><button className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#124f46] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#0b3d36]"><Icon name="send" size={16} /> Create invite</button></form></section><section className="mt-7 grid gap-4 sm:grid-cols-3"><SmallStat label="Total invited" value={String(referrals.length)} icon="users" color="bg-sky-50 text-sky-700" /><SmallStat label="Qualified friends" value={String(qualifiedReferrals)} icon="check" color="bg-emerald-50 text-emerald-700" /><SmallStat label="Referral earnings" value={money(earnings)} icon="gift" color="bg-amber-50 text-amber-700" /></section>
 {/* <section className="mt-7 overflow-hidden rounded-2xl border border-slate-200/80 bg-white"><div className="flex flex-col justify-between gap-2 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:px-6"><div><h2 className="text-lg font-semibold tracking-[-0.03em]">Your referrals</h2><p className="mt-1 text-sm text-slate-500">Track eligibility and referral rewards.</p></div><span className="text-xs font-medium text-slate-400">Reward unlock: 2 ads watched</span></div><div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left"><thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400"><tr><th className="px-6 py-3.5">Member</th><th className="px-4 py-3.5">Joined</th><th className="px-4 py-3.5">Status</th><th className="px-4 py-3.5 text-right">Reward</th><th className="px-6 py-3.5" /></tr></thead><tbody className="divide-y divide-slate-100">{referrals.map((referral) => <tr key={referral.id} className="text-sm"><td className="px-6 py-4"><p className="font-semibold text-slate-800">{referral.name}</p><p className="mt-0.5 text-xs text-slate-400">{referral.email}</p></td><td className="px-4 py-4 text-slate-500">{referral.joined}</td><td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusClass(referral.status)}`}>{referral.status}</span></td><td className="px-4 py-4 text-right font-bold text-[#16816e]">{referral.reward ? `+${money(referral.reward)}` : "-"}</td><td className="px-6 py-4 text-right">{referral.status !== "Qualified" && <button onClick={() => onQualify(referral.id)} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#16816e] transition hover:bg-emerald-50">Mark qualified</button>}</td></tr>)}</tbody></table></div></section> */}
 </div>; }
+
+function AdminPanel({ account, onApproveTransaction }: { account: Account; onApproveTransaction: (id: number) => void }) {
+  const pendingTransactions = account.pendingTransactions.filter(t => t.status === "pending");
+  
+  return (
+    <div className="page-enter">
+      <PageHeader 
+        eyebrow="Admin Panel" 
+        title="Transaction Management" 
+        description="Review and approve pending deposits and withdrawals." 
+      />
+      
+      {pendingTransactions.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-8 text-center">
+          <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-green-100 text-green-600 mx-auto">
+            <Icon name="check" size={24} />
+          </span>
+          <h2 className="mt-5 text-xl font-semibold tracking-[-0.03em]">No Pending Transactions</h2>
+          <p className="mt-2 text-sm text-slate-500">All transactions have been processed.</p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden">
+          <div className="border-b border-slate-100 px-5 py-5">
+            <h2 className="text-lg font-semibold tracking-[-0.03em]">Pending Transactions ({pendingTransactions.length})</h2>
+            <p className="mt-1 text-sm text-slate-500">Review and approve transactions submitted by users.</p>
+          </div>
+          
+          <div className="divide-y divide-slate-100">
+            {pendingTransactions.map((transaction) => (
+              <div key={transaction.id} className="px-5 py-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${
+                        transaction.type === "deposit" ? "bg-blue-100 text-blue-600" : "bg-green-100 text-green-600"
+                      }`}>
+                        <Icon name={transaction.type === "deposit" ? "plus" : "arrow-up"} size={16} />
+                      </span>
+                      <div>
+                        <p className="font-semibold text-slate-800">
+                          {transaction.type === "deposit" ? "Deposit" : "Withdrawal"} - {money(transaction.amount)}
+                        </p>
+                        <p className="text-sm text-slate-500">
+                          Method: {transaction.method} • ID: {transaction.id} • 
+                          Submitted: {new Date(transaction.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => onApproveTransaction(transaction.id)}
+                      className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700"
+                    >
+                      Approve
+                    </button>
+                    <button className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <div className="mt-7 rounded-2xl border border-slate-200/80 bg-white p-6">
+        <h2 className="text-lg font-semibold tracking-[-0.03em]">Admin Instructions</h2>
+        <ul className="mt-3 space-y-2 text-sm text-slate-600">
+          <li className="flex gap-2">
+            <span className="text-blue-600"><Icon name="check" size={16} /></span>
+            Verify the payment screenshot before approving deposits
+          </li>
+          <li className="flex gap-2">
+            <span className="text-blue-600"><Icon name="check" size={16} /></span>
+            Ensure user has sufficient balance before approving withdrawals
+          </li>
+          <li className="flex gap-2">
+            <span className="text-blue-600"><Icon name="check" size={16} /></span>
+            Contact customer service at {supportNumber} for any issues
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
 function SmallStat({ label, value, icon, color }: { label: string; value: string; icon: IconName; color: string }) { return <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${color}`}><Icon name={icon} size={18} /></span><p className="mt-4 text-sm font-medium text-slate-500">{label}</p><p className="mt-1 text-2xl font-semibold tracking-[-0.04em]">{value}</p></div>; }
 
 function PlansPage({ activePlan, onChoose }: { activePlan: PlanId; onChoose: (id: PlanId) => void }) { const planList = useMemo(() => [plans.free, plans.standard, plans.premium, plans["premium-pro"]], []); return <div className="page-enter"><PageHeader eyebrow="Membership plans" title="Choose your earning pace" description="Every plan sets your daily ad allowance, per-ad earnings, and withdrawal minimum." /><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{planList.map((plan) => <article key={plan.id} className={`relative flex min-h-[440px] flex-col rounded-2xl border p-6 ${plan.highlighted ? "border-blue-600 bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-950/15" : "border-slate-200/80 bg-white text-slate-900"}`}>{plan.highlighted && <span className="absolute -top-3 left-6 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-white">Best value</span>}<div className="flex items-start justify-between"><span className={`flex h-10 w-10 items-center justify-center rounded-xl ${plan.highlighted ? "bg-white/10 text-blue-100" : "bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600"}`}><Icon name="crown" size={19} /></span>{activePlan === plan.id && <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${plan.highlighted ? "bg-white/15 text-white" : "bg-blue-50 text-blue-600"}`}>Active</span>}</div><h2 className="mt-6 text-xl font-semibold tracking-[-0.035em]">{plan.name}</h2><p className={`mt-2 min-h-10 text-sm leading-5 ${plan.highlighted ? "text-blue-100/70" : "text-slate-500"}`}>{plan.description}</p><div className="mt-6"><span className="text-3xl font-semibold tracking-[-0.05em]">{plan.price === 0 ? "Free" : money(plan.price)}</span>{plan.price > 0 && <span className={plan.highlighted ? "text-blue-100/60" : "text-slate-400"}> / activation</span>}</div><ul className={`mt-6 space-y-3 border-t pt-5 text-sm ${plan.highlighted ? "border-white/10 text-blue-50" : "border-slate-100 text-slate-600"}`}><li className="flex gap-2"><span className={plan.highlighted ? "text-blue-100" : "text-blue-600"}><Icon name="check" size={17} stroke={2.5} /></span>{plan.dailyLimit} ads each day</li><li className="flex gap-2"><span className={plan.highlighted ? "text-blue-100" : "text-blue-600"}><Icon name="check" size={17} stroke={2.5} /></span>Rs. {plan.perAdPrice} per ad</li><li className="flex gap-2"><span className={plan.highlighted ? "text-blue-100" : "text-blue-600"}><Icon name="check" size={17} stroke={2.5} /></span>Withdraw from {money(plan.minWithdrawal)}</li></ul><button onClick={() => onChoose(plan.id)} disabled={activePlan === plan.id} className={`mt-auto w-full rounded-xl px-4 py-3 text-sm font-bold transition ${plan.highlighted ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-600 hover:to-emerald-600" : "bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700"} disabled:cursor-default disabled:bg-slate-100 disabled:text-slate-400`}>{activePlan === plan.id ? "Current plan" : plan.price === 0 ? "Switch to Free" : `Activate for ${money(plan.price)}`}</button></article>)}</div><div className="mt-8 flex gap-3 rounded-2xl border border-slate-200/80 bg-white p-5 text-sm leading-6 text-slate-500"><span className="mt-0.5 text-blue-600"><Icon name="shield" size={19} /></span><p><strong className="text-slate-700">Front-end checkout:</strong> activating a plan is simulated in this demo. Your selected plan and daily limit are safely retained in this browser.</p></div></div>; }
@@ -592,3 +887,170 @@ function WatchModal({ ad, onComplete, onClose }: { ad: Ad; onComplete: () => voi
 function PlanModal({ plan, onClose, onConfirm }: { plan: (typeof plans)[PlanId]; onClose: () => void; onConfirm: () => void }) { return <Overlay><div className="modal-enter w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600"><Icon name="crown" size={21} /></span><button onClick={onClose} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100"><Icon name="x" size={19} /></button></div><h2 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">Activate {plan.name}</h2><p className="mt-2 text-sm leading-6 text-slate-500">This demo will activate your plan immediately and update your daily ad allowance.</p><div className="mt-6 rounded-xl bg-slate-50 p-4"><div className="flex items-center justify-between text-sm"><span className="text-slate-500">Plan activation</span><strong>{plan.price ? money(plan.price) : "Free"}</strong></div><div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-sm"><span className="text-slate-500">Daily ads</span><strong>{plan.dailyLimit} ads</strong></div><div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-sm"><span className="text-slate-500">Earnings per ad</span><strong>Rs. {plan.perAdPrice}</strong></div><div className="mt-3 flex items-center justify-between text-sm"><span className="text-slate-500">Minimum withdrawal</span><strong>{money(plan.minWithdrawal)}</strong></div></div><div className="mt-6 grid grid-cols-2 gap-3"><button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">Cancel</button><button onClick={onConfirm} className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700">Confirm plan</button></div></div></Overlay>; }
 function DepositModal({ amount, onAmountChange, onClose, onSubmit }: { amount: string; onAmountChange: (value: string) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) { return <Overlay><form onSubmit={onSubmit} className="modal-enter w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600"><Icon name="plus" size={21} /></span><button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100"><Icon name="x" size={19} /></button></div><h2 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">Deposit Wallet Funds</h2><p className="mt-2 text-sm leading-6 text-slate-500">Minimum deposit: Rs. 300. Send screenshot to customer service at {supportNumber}.</p><div className="mt-6 grid grid-cols-3 gap-2">{[300, 500, 1000].map((value) => <button type="button" key={value} onClick={() => onAmountChange(String(value))} className={`rounded-xl border px-3 py-2.5 text-sm font-bold transition ${Number(amount) === value ? "border-blue-600 bg-blue-50 text-blue-600" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>{money(value)}</button>)}</div><label className="mt-5 block text-sm font-medium text-slate-700">Custom amount<input value={amount} onChange={(event) => onAmountChange(event.target.value)} inputMode="numeric" placeholder="Minimum Rs. 300" className="mt-2 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100" /></label><button className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700">Deposit {money(Number(amount) || 0)} <Icon name="arrow-right" size={17} /></button></form></Overlay>; }
 function WithdrawModal({ plan, amount, method, onAmountChange, onMethodChange, onClose, onSubmit }: { plan: (typeof plans)[PlanId]; amount: string; method: string; onAmountChange: (value: string) => void; onMethodChange: (value: string) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) { return <Overlay><form onSubmit={onSubmit} className="modal-enter w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600"><Icon name="arrow-up" size={21} /></span><button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100"><Icon name="x" size={19} /></button></div><h2 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">Withdraw your balance</h2><p className="mt-2 text-sm leading-6 text-slate-500">{plan.name} members can request from {money(plan.minWithdrawal)}. Send screenshot to customer service at {supportNumber}.</p><label className="mt-6 block text-sm font-medium text-slate-700">Amount<input value={amount} onChange={(event) => onAmountChange(event.target.value)} inputMode="decimal" placeholder={`Minimum ${money(plan.minWithdrawal)}`} className="mt-2 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100" /></label><label className="mt-4 block text-sm font-medium text-slate-700">Send to<select value={method} onChange={(event) => onMethodChange(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"><option>Easypaisa</option><option>JazzCash</option></select></label><button className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700">Create withdrawal request <Icon name="arrow-right" size={17} /></button></form></Overlay>; }
+
+function PaymentOptionsModal({ 
+  type, 
+  amount, 
+  selectedMethod, 
+  screenshotFile, 
+  uploading, 
+  onMethodChange, 
+  onScreenshotUpload, 
+  onSubmit, 
+  onClose 
+}: { 
+  type: "deposit" | "withdraw"; 
+  amount: number; 
+  selectedMethod: string; 
+  screenshotFile: File | null; 
+  uploading: boolean; 
+  onMethodChange: (method: string) => void; 
+  onScreenshotUpload: (event: React.ChangeEvent<HTMLInputElement>) => void; 
+  onSubmit: () => void; 
+  onClose: () => void; 
+}) {
+  const paymentMethods = [
+    { id: "JazzCash", name: "JazzCash", number: "+92 348 0103280" },
+    { id: "Easypaisa", name: "Easypaisa", number: "+92 348 0103280" },
+    { id: "BankTransfer", name: "Bank Transfer", number: "Account: 123456789, Bank: Habib Bank" },
+  ];
+
+  return (
+    <Overlay>
+      <div className="modal-enter w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600">
+            <Icon name={type === "deposit" ? "plus" : "arrow-up"} size={21} />
+          </span>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100">
+            <Icon name="x" size={19} />
+          </button>
+        </div>
+        
+        <h2 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">
+          {type === "deposit" ? "Complete Deposit" : "Complete Withdrawal"}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          {type === "deposit" 
+            ? `Deposit amount: ${money(amount)}. Send payment to one of the numbers below and upload screenshot.`
+            : `Withdrawal amount: ${money(amount)}. Choose your payment method and upload screenshot.`
+          }
+        </p>
+
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold tracking-[-0.03em]">Payment Methods</h3>
+          <div className="mt-3 space-y-3">
+            {paymentMethods.map((method) => (
+              <div 
+                key={method.id}
+                className={`rounded-xl border p-4 transition cursor-pointer ${selectedMethod === method.id ? "border-blue-600 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}
+                onClick={() => onMethodChange(method.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-slate-800">{method.name}</p>
+                    <p className="mt-1 text-sm text-slate-600">{method.number}</p>
+                  </div>
+                  {selectedMethod === method.id && (
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
+                      <Icon name="check" size={12} stroke={3} />
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold tracking-[-0.03em]">Upload Screenshot</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Upload screenshot of your {type === "deposit" ? "payment confirmation" : "withdrawal request"} for verification.
+          </p>
+          
+          <div className="mt-3">
+            {screenshotFile ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                      <Icon name="check" size={18} />
+                    </span>
+                    <div>
+                      <p className="font-semibold text-slate-800">{screenshotFile.name}</p>
+                      <p className="text-sm text-slate-500">
+                        {(screenshotFile.size / 1024 / 1024).toFixed(2)} MB • {screenshotFile.type.split('/')[1].toUpperCase()}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => onScreenshotUpload({ target: { files: [] } } as any)}
+                    className="rounded-lg p-2 text-slate-400 hover:text-rose-600"
+                  >
+                    <Icon name="x" size={17} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="block cursor-pointer">
+                <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center transition hover:border-blue-400 hover:bg-blue-50">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                    <Icon name="plus" size={22} />
+                  </span>
+                  <p className="mt-3 font-semibold text-slate-700">Upload Screenshot</p>
+                  <p className="mt-1 text-sm text-slate-500">JPG, PNG or PDF up to 5MB</p>
+                </div>
+                <input 
+                  type="file" 
+                  accept="image/*,.pdf" 
+                  onChange={onScreenshotUpload} 
+                  className="hidden" 
+                />
+              </label>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-8 grid grid-cols-2 gap-3">
+          <button 
+            type="button" 
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button 
+            type="button" 
+            onClick={onSubmit}
+            disabled={!screenshotFile || uploading}
+            className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {uploading ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                Uploading...
+              </>
+            ) : (
+              <>
+                {type === "deposit" ? "Submit Deposit" : "Submit Withdrawal"}
+                <Icon name="arrow-right" size={17} />
+              </>
+            )}
+          </button>
+        </div>
+
+        <div className="mt-6 rounded-xl bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <Icon name="info" size={14} />
+            </span>
+            <p className="text-sm text-amber-800">
+              <strong>Important:</strong> After uploading screenshot, admin will review and {type === "deposit" ? "add funds to your balance" : "process your withdrawal"}. Contact {supportNumber} for assistance.
+            </p>
+          </div>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
