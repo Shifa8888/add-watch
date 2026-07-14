@@ -43,6 +43,7 @@ type Referral = {
 
 type Account = {
   username: string;
+  email: string;
   balance: number;
   adsWatched: number;
   dailyLimit: number;
@@ -51,6 +52,7 @@ type Account = {
   referrals: Referral[];
   activity: { id: number; title: string; time: string; amount: number; type: "earn" | "deposit" | "withdraw" | "pending_deposit" | "pending_withdraw" }[];
   pendingTransactions: { id: number; type: "deposit" | "withdraw"; amount: number; method: string; status: "pending" | "approved" | "rejected"; screenshot?: string; timestamp: number }[];
+  loginHistory: { id: number; timestamp: number; device?: string }[];
 };
 
 type Ad = {
@@ -115,14 +117,18 @@ const ads: Ad[] = [
 
 const initialAccount = (): Account => {
   const saved = localStorage.getItem("gemstar-account");
-  const savedUsername = localStorage.getItem("gemstar-username") || "user123";
+  const savedUsername = localStorage.getItem("gemstar-username") || "";
+  const savedEmail = localStorage.getItem("gemstar-email") || "";
   
   if (saved) {
     try {
       const parsed = JSON.parse(saved) as Account;
-      // Update username from localStorage if available
+      // Update username and email from localStorage if available
       if (savedUsername && savedUsername !== parsed.username) {
         parsed.username = savedUsername;
+      }
+      if (savedEmail && savedEmail !== parsed.email) {
+        parsed.email = savedEmail;
       }
       return parsed;
     } catch {
@@ -130,7 +136,8 @@ const initialAccount = (): Account => {
     }
   }
   return {
-    username: savedUsername,
+    username: savedUsername || "user123",
+    email: savedEmail || "user@example.com",
     balance: 0,
     adsWatched: 0,
     dailyLimit: 5,
@@ -147,6 +154,7 @@ const initialAccount = (): Account => {
       { id: 3, title: "Earned from Pakistan Telecom", time: "Yesterday", amount: 5, type: "earn" },
     ],
     pendingTransactions: [],
+    loginHistory: [],
   };
 };
 
@@ -207,8 +215,8 @@ export default function App() {
   const [withdrawMethod, setWithdrawMethod] = useState("JazzCash");
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginEmail, setLoginEmail] = useState("");
+  const [loginUsername, setLoginUsername] = useState(() => localStorage.getItem("gemstar-username") || "");
+  const [loginEmail, setLoginEmail] = useState(() => localStorage.getItem("gemstar-email") || "");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [gamUnitPath, setGamUnitPath] = useState(() => localStorage.getItem("gemstar-gam-rewarded-unit") ?? "");
@@ -261,13 +269,37 @@ export default function App() {
       setLoginError("Enter username, email and password to continue.");
       return;
     }
+    
+    const username = loginUsername.trim();
+    const email = loginEmail.trim();
+    
+    // Save to localStorage
     localStorage.setItem("gemstar-session", "active");
-    localStorage.setItem("gemstar-username", loginUsername.trim());
-    localStorage.setItem("gemstar-email", loginEmail.trim());
+    localStorage.setItem("gemstar-username", username);
+    localStorage.setItem("gemstar-email", email);
+    
+    // Create or update account with login history
+    const currentAccount = initialAccount();
+    const loginEntry = {
+      id: Date.now(),
+      timestamp: Date.now(),
+      device: navigator.userAgent.substring(0, 50) // Save first 50 chars of user agent
+    };
+    
+    const updatedAccount: Account = {
+      ...currentAccount,
+      username: username,
+      email: email,
+      loginHistory: [loginEntry, ...currentAccount.loginHistory.slice(0, 9)], // Keep last 10 logins
+    };
+    
+    // Save updated account
+    localStorage.setItem("gemstar-account", JSON.stringify(updatedAccount));
+    setAccount(updatedAccount);
     setIsLoggedIn(true);
     
     // Check if user is admin
-    if (loginUsername.trim() === "admin" || loginEmail.trim() === "admin@gemstar.com") {
+    if (username === "admin" || email === "admin@gemstar.com") {
       setIsAdmin(true);
     } else {
       setIsAdmin(false);
@@ -278,13 +310,13 @@ export default function App() {
 
   function logout() {
     localStorage.removeItem("gemstar-session");
-    localStorage.removeItem("gemstar-username");
-    localStorage.removeItem("gemstar-email");
     setIsLoggedIn(false);
     setMobileMenu(false);
     setLoginPassword("");
     setLoginUsername("");
     setLoginEmail("");
+    // Note: We don't remove username and email from localStorage
+    // so user can log back in with same credentials
   }
 
   function copyReferralLink() {
@@ -674,7 +706,187 @@ function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; 
 
 function Dashboard({ account, currentPlan, remainingAds, qualifiedReferrals, onNavigate }: { account: Account; currentPlan: (typeof plans)[PlanId]; remainingAds: number; qualifiedReferrals: number; onNavigate: (page: Page) => void }) {
   const progress = Math.round((account.adsWatched / account.dailyLimit) * 100);
-  return <div className="page-enter"><PageHeader eyebrow={`Welcome, ${account.username}`} title="Your earning dashboard" description="A clear view of what you have earned and what is still available today." action={<div className="flex gap-2"><button onClick={() => onNavigate("ads")} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700"><Icon name="play" size={17} /> Watch an ad</button><button onClick={() => { localStorage.removeItem("gemstar-session"); localStorage.removeItem("gemstar-username"); localStorage.removeItem("gemstar-email"); window.location.reload(); }} className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"><Icon name="log-out" size={17} /> Logout</button></div>} /><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Available balance" value={money(account.balance)} icon="wallet" accent="bg-emerald-50 text-emerald-700" helper="Ready for withdrawal" onClick={() => onNavigate("wallet")} /><Metric label="Ads viewed today" value={`${account.adsWatched} / ${account.dailyLimit}`} icon="play" accent="bg-violet-50 text-violet-700" helper={`${remainingAds} ads remaining`} onClick={() => onNavigate("ads")} /><Metric label="Your referrals" value={`${account.referrals.length}`} icon="users" accent="bg-amber-50 text-amber-700" helper={`${qualifiedReferrals} reward qualified`} onClick={() => onNavigate("referrals")} /><Metric label="Total deposited" value={money(account.deposits)} icon="trending" accent="bg-sky-50 text-sky-700" helper="Manage wallet funds" onClick={() => onNavigate("wallet")} /></section><section className="mt-7"><div className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white"><div className="flex items-start justify-between"><div><p className="text-sm font-medium text-blue-100/80">Today&apos;s progress</p><h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">Keep your streak alive</h2></div><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-blue-100"><Icon name="trending" size={19} /></span></div><div className="my-8 flex items-center gap-6"><div className="relative grid h-28 w-28 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#60a5fa ${progress * 3.6}deg, rgba(255,255,255,.14) 0deg)` }}><div className="grid h-20 w-20 place-items-center rounded-full bg-gradient-to-r from-blue-600 to-indigo-600"><strong className="text-xl">{progress}%</strong><span className="text-[10px] uppercase tracking-wider text-blue-100/70">complete</span></div></div><div><p className="text-3xl font-semibold tracking-[-0.05em]">{remainingAds}</p><p className="mt-1 text-sm leading-5 text-blue-100/70">ads left from your daily allowance of {account.dailyLimit}</p></div></div><button onClick={() => onNavigate("ads")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-3 text-sm font-bold text-white transition hover:from-green-600 hover:to-emerald-600">Continue earning <Icon name="arrow-right" size={17} /></button><p className="mt-4 text-center text-xs text-blue-100/55">Current plan: {currentPlan.name}</p></div></section><section className="mt-7 rounded-2xl border border-amber-200/80 bg-[#fffaf0] px-5 py-5 sm:flex sm:items-center sm:justify-between sm:px-6"><div className="flex gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700"><Icon name="crown" size={19} /></span><div><p className="font-semibold text-slate-800">Need a larger daily limit?</p><p className="mt-1 text-sm text-slate-500">Upgrade your plan to unlock more ads and lower withdrawal minimums.</p></div></div><button onClick={() => onNavigate("plans")} className="mt-4 inline-flex items-center gap-1 text-sm font-bold text-[#a45c0c] hover:text-[#7e4404] sm:mt-0">Explore plans <Icon name="chevron" size={17} /></button></section></div>;
+  
+  // Format date for login history
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-PK', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+  
+  // Get last 5 logins
+  const recentLogins = account.loginHistory.slice(0, 5);
+  
+  return (
+    <div className="page-enter">
+      <PageHeader 
+        eyebrow={`Welcome, ${account.username}`} 
+        title="Your earning dashboard" 
+        description={`Account: ${account.username} | Email: ${account.email} | Member since: ${account.loginHistory.length > 0 ? formatDate(account.loginHistory[account.loginHistory.length - 1].timestamp) : 'New user'}`} 
+        action={
+          <div className="flex gap-2">
+            <button onClick={() => onNavigate("ads")} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700">
+              <Icon name="play" size={17} /> Watch an ad
+            </button>
+            <button onClick={() => { 
+              logout();
+              window.location.reload();
+            }} className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100">
+              <Icon name="log-out" size={17} /> Logout
+            </button>
+          </div>
+        } 
+      />
+      
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Available balance" value={money(account.balance)} icon="wallet" accent="bg-emerald-50 text-emerald-700" helper="Ready for withdrawal" onClick={() => onNavigate("wallet")} />
+        <Metric label="Ads viewed today" value={`${account.adsWatched} / ${account.dailyLimit}`} icon="play" accent="bg-violet-50 text-violet-700" helper={`${remainingAds} ads remaining`} onClick={() => onNavigate("ads")} />
+        <Metric label="Your referrals" value={`${account.referrals.length}`} icon="users" accent="bg-amber-50 text-amber-700" helper={`${qualifiedReferrals} reward qualified`} onClick={() => onNavigate("referrals")} />
+        <Metric label="Total deposited" value={money(account.deposits)} icon="trending" accent="bg-sky-50 text-sky-700" helper="Manage wallet funds" onClick={() => onNavigate("wallet")} />
+      </section>
+      
+      <section className="mt-7 grid gap-6 lg:grid-cols-2">
+        {/* Progress Section */}
+        <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-100/80">Today&apos;s progress</p>
+              <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">Keep your streak alive</h2>
+            </div>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-blue-100">
+              <Icon name="trending" size={19} />
+            </span>
+          </div>
+          <div className="my-8 flex items-center gap-6">
+            <div className="relative grid h-28 w-28 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#60a5fa ${progress * 3.6}deg, rgba(255,255,255,.14) 0deg)` }}>
+              <div className="grid h-20 w-20 place-items-center rounded-full bg-gradient-to-r from-blue-600 to-indigo-600">
+                <strong className="text-xl">{progress}%</strong>
+                <span className="text-[10px] uppercase tracking-wider text-blue-100/70">complete</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-3xl font-semibold tracking-[-0.05em]">{remainingAds}</p>
+              <p className="mt-1 text-sm leading-5 text-blue-100/70">ads left from your daily allowance of {account.dailyLimit}</p>
+            </div>
+          </div>
+          <button onClick={() => onNavigate("ads")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-3 text-sm font-bold text-white transition hover:from-green-600 hover:to-emerald-600">
+            Continue earning <Icon name="arrow-right" size={17} />
+          </button>
+          <p className="mt-4 text-center text-xs text-blue-100/55">Current plan: {currentPlan.name}</p>
+        </div>
+        
+        {/* Login History Section */}
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <Icon name="clock" size={19} />
+            </span>
+            <div>
+              <h2 className="text-lg font-semibold tracking-[-0.03em]">Login History</h2>
+              <p className="text-sm text-slate-500">Recent account access records</p>
+            </div>
+          </div>
+          
+          {recentLogins.length > 0 ? (
+            <div className="space-y-3">
+              {recentLogins.map((login) => (
+                <div key={login.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600">
+                      <Icon name="check" size={14} />
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">Successful Login</p>
+                      <p className="text-xs text-slate-500">{formatDate(login.timestamp)}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                    {login.device?.includes('Mobile') ? 'Mobile' : 'Desktop'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400 mx-auto mb-3">
+                <Icon name="clock" size={20} />
+              </span>
+              <p className="text-sm text-slate-500">No login history yet</p>
+              <p className="text-xs text-slate-400 mt-1">Login history will appear here after you log in</p>
+            </div>
+          )}
+          
+          {account.loginHistory.length > 5 && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <p className="text-xs text-slate-500 text-center">
+                Showing 5 of {account.loginHistory.length} logins
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+      
+      <section className="mt-7 rounded-2xl border border-amber-200/80 bg-[#fffaf0] px-5 py-5 sm:flex sm:items-center sm:justify-between sm:px-6">
+        <div className="flex gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+            <Icon name="crown" size={19} />
+          </span>
+          <div>
+            <p className="font-semibold text-slate-800">Need a larger daily limit?</p>
+            <p className="mt-1 text-sm text-slate-500">Upgrade your plan to unlock more ads and lower withdrawal minimums.</p>
+          </div>
+        </div>
+        <button onClick={() => onNavigate("plans")} className="mt-4 inline-flex items-center gap-1 text-sm font-bold text-[#a45c0c] hover:text-[#7e4404] sm:mt-0">
+          Explore plans <Icon name="chevron" size={17} />
+        </button>
+      </section>
+      
+      {/* Account Information Section */}
+      <section className="mt-7 rounded-2xl border border-slate-200/80 bg-white p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+            <Icon name="users" size={19} />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.03em]">Account Information</h2>
+            <p className="text-sm text-slate-500">Your profile details and statistics</p>
+          </div>
+        </div>
+        
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+            <p className="text-xs font-medium text-slate-500">Username</p>
+            <p className="mt-1 font-semibold text-slate-800">{account.username}</p>
+          </div>
+          
+          <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+            <p className="text-xs font-medium text-slate-500">Email</p>
+            <p className="mt-1 font-semibold text-slate-800">{account.email}</p>
+          </div>
+          
+          <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+            <p className="text-xs font-medium text-slate-500">Total Logins</p>
+            <p className="mt-1 font-semibold text-slate-800">{account.loginHistory.length}</p>
+          </div>
+          
+          <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+            <p className="text-xs font-medium text-slate-500">Member Since</p>
+            <p className="mt-1 font-semibold text-slate-800">
+              {account.loginHistory.length > 0 
+                ? formatDate(account.loginHistory[account.loginHistory.length - 1].timestamp)
+                : 'Today'}
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
 }
 
 function Metric({ label, value, helper, icon, accent, onClick }: { label: string; value: string; helper: string; icon: IconName; accent: string; onClick: () => void }) { return <button onClick={onClick} className="group rounded-2xl border border-slate-200/80 bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-200/40"><div className="flex items-start justify-between"><span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${accent}`}><Icon name={icon} size={19} /></span><span className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[#16816e]"><Icon name="arrow-right" size={17} /></span></div><p className="mt-5 text-sm font-medium text-slate-500">{label}</p><p className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-slate-900">{value}</p><p className="mt-1.5 text-xs font-medium text-slate-400">{helper}</p></button>; }
