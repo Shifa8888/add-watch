@@ -733,13 +733,15 @@ function Dashboard({ account, currentPlan, remainingAds, qualifiedReferrals, onN
             <button onClick={() => onNavigate("ads")} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-indigo-700">
               <Icon name="play" size={17} /> Watch an ad
             </button>
-            <button onClick={() => { 
-              logout();
-              window.location.reload();
-            }} className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100">
-              <Icon name="log-out" size={17} /> Logout
-            </button>
-          </div>
+<button 
+  onClick={async () => { 
+    await logout(); // پہلے لاگ آؤٹ مکمل ہونے کا انتظار کریں
+    window.location.reload(); // اس کے بعد پیج ریفریش کریں
+  }} 
+  className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
+>
+  <Icon name="log-out" size={17} /> Logout
+</button>          </div>
         } 
       />
       
