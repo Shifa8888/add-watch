@@ -734,9 +734,20 @@ function Dashboard({ account, currentPlan, remainingAds, qualifiedReferrals, onN
               <Icon name="play" size={17} /> Watch an ad
             </button>
 <button 
-  onClick={async () => { 
-    await logout(); // پہلے لاگ آؤٹ مکمل ہونے کا انتظار کریں
-    window.location.reload(); // اس کے بعد پیج ریفریش کریں
+  onClick={() => { 
+    // 1. اگر آپ کا لاگ آؤٹ فنکشن ہے تو اسے چلائیں
+    if (typeof logout === 'function') {
+      logout();
+    }
+    
+    // 2. مینوئلی لوکل اسٹوریج اور سیشن اسٹوریج کو صاف کریں
+    localStorage.clear(); 
+    sessionStorage.clear();
+
+    // 3. تھوڑا سا وقفہ (delay) دیں تاکہ ڈیٹا کلیئر ہو جائے، پھر ریفریش کریں
+    setTimeout(() => {
+      window.location.reload();
+    }, 100);
   }} 
   className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
 >
